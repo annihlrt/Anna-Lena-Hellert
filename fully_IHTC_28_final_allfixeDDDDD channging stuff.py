@@ -76,6 +76,9 @@ room_assign = model.addVars(patient_ids, room_ids, vtype=GRB.BINARY, name="room_
 theater_assign = model.addVars(patient_ids, ot_ids, days_list, vtype=GRB.BINARY, name="theater_assign")
 nurse_assign = model.addVars(nurse_ids, room_ids, days_list, shifts_list, vtype=GRB.BINARY, name="nurse_assign")
 
+
+
+
 # === Admission constraints ===
 for p in patient_ids:
     release, due = p_release[p], p_due[p]
@@ -359,7 +362,7 @@ for p in patient_ids:
 # === S8: Optional patients are not scheduled ===
 unscheduled = [1 - scheduled[p] for p in patient_ids if not p_mand[p]]
 
-# === S2: Continuity of Care === not using S2, as looping through everything is not efficient
+# === S2: Continuity of Care === was often not using S2, as looping through everything is not efficient
 nurse_cares = model.addVars(patient_ids, nurse_ids, vtype=GRB.BINARY, name="nurse_cares")
 continuity_penalties = []
 for p in patient_ids:
@@ -390,9 +393,18 @@ model.setObjective(
     GRB.MINIMIZE
 )
 
-model.setParam("TimeLimit", 600)
-model.setParam("Presolve", 2)
+
+
+model.setParam("TimeLimit", 200)
 model.setParam("LogFile", "gurobi_log.txt")
+model.setParam("Presolve", 1)
+model.setParam("Cuts", 0)
+model.setParam("MIPFocus", 1)
+model.setParam("Heuristics", 0.2)
+model.setParam("Symmetry", 1)
+model.setParam("MIPGap", 0.01)  # Stop when the relative gap <= 1%
+
+
 model.optimize() #optimizing the model here
 
 if model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT:
