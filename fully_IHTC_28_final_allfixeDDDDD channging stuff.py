@@ -16,7 +16,7 @@ shifts_list = list(range(len(shift_types)))
 age_order = {ag: i for i, ag in enumerate(data["age_groups"])}
 weights = data["weights"]
 
-# === Extract core entities ===
+# === Extract entities ===
 patients = data["patients"]
 occupants = data["occupants"]
 rooms = data["rooms"]
@@ -209,6 +209,9 @@ for r in room_ids:
 
         # Enforce no mix
         model.addConstr(gender_in_room[r, d, "A"] + gender_in_room[r, d, "B"] <= 1)
+
+
+
 # === Soft Constraints & Objective ===
 age_penalties = []
 skill_mismatch_penalties = []
@@ -218,8 +221,7 @@ surgeon_transfer_penalties = []
 admission_delays = []
 
 
-
-# === S1: Age Group Mixing Penalty ===
+# === S1 ===
 for r in room_ids:
     for d in days_list:
         age_vars = []
@@ -240,7 +242,7 @@ for r in room_ids:
 
 
 
-# === S2: Skill mismatch penalty (correct linearization) ===
+# === S2  ===
 for n in nurse_ids:
     skill = nurse_skill[n]
     for d in days_list:
@@ -307,7 +309,8 @@ for n in nurse_ids:
                     diff = max(0, req_skill - skill)
                     if diff > 0:
                         pass
-# === S4: Nurse overload  ===
+
+# === S4 ===
 for n in nurse_ids:
     for d in days_list:
         for s in shifts_list:
@@ -332,7 +335,7 @@ for n in nurse_ids:
                 model.addConstr(over >= total_workload - maxload)
                 overload_penalties.append(over)
 
-# === S5: Open OT penalty ===
+# === S5 ===
 for t in ot_ids:
     for d in days_list:
         open_var = model.addVar(vtype=GRB.BINARY, name=f"openOT_{t}_{d}")
@@ -340,7 +343,7 @@ for t in ot_ids:
         model.addConstr(open_var >= surgeries / 1000)
         ot_open_vars[t, d] = open_var
 
-# === S6: Surgeon transfer penalty ===
+# === S6 ===
 for s in surgeon_ids:
     for d in days_list:
         ot_used = []
@@ -352,14 +355,14 @@ for s in surgeon_ids:
             ot_used.append(used)
         surgeon_transfer_penalties.append(gp.quicksum(ot_used) - 1)
 
-# === S7: Admission delay ===
+# === S7  ===
 for p in patient_ids:
     if not p_mand[p]:
         delay = gp.quicksum(d * admit[p, d] for d in range(p_release[p], days))
         admission_delays.append(delay - p_release[p] * scheduled[p])
 
 
-# === S8: Optional patients are not scheduled ===
+# === S8  ===
 unscheduled = [1 - scheduled[p] for p in patient_ids if not p_mand[p]]
 
 # === S2: Continuity of Care === was often not using S2, as looping through everything is not efficient
@@ -395,10 +398,10 @@ model.setObjective(
 
 
 
-model.setParam("TimeLimit", 200)
+model.setParam("TimeLimit", 200) #setting time limit
 model.setParam("LogFile", "gurobi_log.txt")
-model.setParam("Presolve", 1)
-model.setParam("Cuts", 0)
+model.setParam("Presolve", 1) #presolve 1 instead of 2
+model.setParam("Threads", 4) #number of threads
 model.setParam("MIPFocus", 1)
 model.setParam("Heuristics", 0.2)
 model.setParam("Symmetry", 1)
@@ -447,17 +450,18 @@ if model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT:
     with open("sol_i12.json", "w") as f:
         json.dump(final_solution, f, indent=2)
 
-    print("✅ Final solution exported to 'sol_i12.json'")
+    print(" Final solution exported to 'sol_i12.json'")
 else:
-    print("❌ No feasible solution found.")
-#---- printing the summary from here ----
-print("\n📝 Summary of Assignments")
+    print(" No feasible solution found.")
 
-print("\n👨‍⚕️ Patients:")
+#---- printing the summary ----
+print("\n Summary of Assignments")
+
+print("\n Patients:")
 for entry in final_patients:
     print(f"  - Patient {entry['id']} admitted on day {entry['admission_day']} to room {entry['room']} in OT {entry['operating_theater']}")
 
-print("\n👩‍⚕️ Nurse Assignments:")
+print("\n Nurse Assignments:")
 for nurse in final_nurses:
     print(f"  - Nurse {nurse['id']}:")
     for a in nurse["assignments"]:
