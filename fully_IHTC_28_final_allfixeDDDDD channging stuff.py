@@ -214,94 +214,6 @@ ot_open_vars = {}
 surgeon_transfer_penalties = []
 admission_delays = []
 
-# === S1: Age Group Mixing Penalty ===
-for r in room_ids:
-    for d in days_list:
-        patient_ages = []
-        for p in patient_ids:
-            los = p_los[p]
-            for a in range(p_release[p], p_due[p] + 1):
-                if a <= d < a + los:
-                    patient_ages.append((age_order[p_age[p]], admit[p, a] * room_assign[p, r]))
-        for occ in occ_room_day.get((r, d), []):
-            patient_ages.append((age_order[occ_age[occ]], 1))
-        if patient_ages:
-            max_age = model.addVar(lb=0, ub=2, vtype=GRB.INTEGER)
-            min_age = model.addVar(lb=0, ub=2, vtype=GRB.INTEGER)
-            model.addGenConstrMax(max_age, [a[0] for a in patient_ages])
-            model.addGenConstrMin(min_age, [a[0] for a in patient_ages])
-            age_penalties.append(max_age - min_age)
-
-# === S2 & S4: Skill mismatch and nurse overload ===
-for n in nurse_ids:
-    skill = nurse_skill[n]
-    for d in days_list:
-        for s in shifts_list:
-            workload_terms = []
-            for r in room_ids:
-                workload = 0
-                for p in patient_ids:
-                    los = p_los[p]
-                    for a in range(p_release[p], p_due[p] + 1):
-                        if a <= d < a + los:
-                            index = 3 * (d - a) + s
-                            req_skill = p_skill[p][index]
-                            diff = max(0, req_skill - skill)
-                            workload += p_work[p][index] * admit[p, a] * room_assign[p, r]
-                for occ in occ_room_day.get((r, d), []):
-                    index = 3 * d + s
-                    req_skill = occ_skill[occ][index]
-                    diff = max(0, req_skill - skill)
-                    workload += occ_work[occ][index]
-                workload_terms.append(workload * nurse_assign[n, r, d, s])
-            if (n, d, s) in nurse_maxload:
-                maxload = nurse_maxload[(n, d, s)]
-                over = model.addVar(lb=0)
-                total_workload = model.addVar(lb=0.0, name=f"total_workload_{n}_{d}_{s}")
-                model.addConstr(total_workload == gp.quicksum(workload_terms))
-                model.addConstr(over >= total_workload - maxload)
-                overload_penalties.append(over)
-
-# === S5: Open OT penalty ===
-for t in ot_ids:
-    for d in days_list:
-        open_var = model.addVar(vtype=GRB.BINARY)
-        surgeries = gp.quicksum(theater_assign[p, t, d] for p in patient_ids)
-        model.addConstr(open_var >= surgeries / 1000)
-        ot_open_vars[t, d] = open_var
-
-# === S6: Surgeon Transfers ===
-for s in surgeon_ids:
-    for d in days_list:
-        ot_used = []
-        for t in ot_ids:
-            used = model.addVar(vtype=GRB.BINARY)
-            assigned = [theater_assign[p, t, d] for p in patient_ids if p_surgeon[p] == s]
-            if assigned:
-                model.addConstr(used >= gp.quicksum(assigned) / 1000)
-            ot_used.append(used)
-        total_ots = gp.quicksum(ot_used)
-        surgeon_transfer_penalties.append(total_ots - 1)
-
-# === S7: Admission Delay ===
-for p in patient_ids:
-    if not p_mand[p]:
-        delay = gp.quicksum(d * admit[p, d] for d in range(p_release[p], days))
-        admission_delays.append(delay - p_release[p] * scheduled[p])
-
-# === S8: Unscheduled Optional ===
-unscheduled = [1 - scheduled[p] for p in patient_ids if not p_mand[p]]
-
-
-
-# === Soft Constraints & Objective (Linearized Version) ===
-age_penalties = []
-skill_mismatch_penalties = []
-overload_penalties = []
-ot_open_vars = {}
-surgeon_transfer_penalties = []
-admission_delays = []
-
 
 
 # === S1: Age Group Mixing Penalty ===
@@ -447,6 +359,23 @@ for p in patient_ids:
 # === S8: Optional patients are not scheduled ===
 unscheduled = [1 - scheduled[p] for p in patient_ids if not p_mand[p]]
 
+# === S2: Continuity of Care === not using S2, as looping through everything is not efficient
+nurse_cares = model.addVars(patient_ids, nurse_ids, vtype=GRB.BINARY, name="nurse_cares")
+continuity_penalties = []
+for p in patient_ids:
+    for n in nurse_ids:
+        for r in room_ids:
+            for d in days_list:
+                for s in shifts_list:
+                    for a in range(p_release[p], p_due[p] + 1):
+                        if a <= d < a + p_los[p]:
+                            and1 = linearize_and(model, admit[p, a], room_assign[p, r], f"cont_and1_{p}_{r}_{a}")
+                            and2 = linearize_and(model, and1, nurse_assign[n, r, d, s], f"cont_and2_{p}_{n}_{r}_{d}_{s}")
+                            model.addConstr(nurse_cares[p, n] >= and2)
+    # Penalty: total number of distinct nurses assigned to patient p
+    continuity_penalties.append(gp.quicksum(nurse_cares[p, n] for n in nurse_ids))
+
+
 # === Objective  ===
 model.setObjective(
     weights["room_mixed_age"] * gp.quicksum(age_penalties) +
@@ -455,11 +384,13 @@ model.setObjective(
     weights["open_operating_theater"] * gp.quicksum(ot_open_vars.values()) +
     weights["surgeon_transfer"] * gp.quicksum(surgeon_transfer_penalties) +
     weights["patient_delay"] * gp.quicksum(admission_delays) +
-    weights["unscheduled_optional"] * gp.quicksum(unscheduled),
+    weights["unscheduled_optional"] * gp.quicksum(unscheduled) +
+    weights["continuity_of_care"] * gp.quicksum(continuity_penalties)
+    ,
     GRB.MINIMIZE
 )
 
-model.setParam("TimeLimit", 120)
+model.setParam("TimeLimit", 600)
 model.setParam("Presolve", 2)
 model.setParam("LogFile", "gurobi_log.txt")
 model.optimize() #optimizing the model here
