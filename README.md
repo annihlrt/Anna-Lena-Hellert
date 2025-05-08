@@ -29,3 +29,7 @@ This repository contains my code. It includes a Mixed Integer Programming (MIP) 
 - For my paper only the included instances are necessary. But for completion all instances were tested.
 - Additional public instances (i01–i30) can be downloaded from the [official competition page](https://ihtc2024.github.io).
 
+### Validation
+To validate results the following code needs to be written into the terminal. 
+````bash
+./IHTP_Validator instance.json solution.json verbose
