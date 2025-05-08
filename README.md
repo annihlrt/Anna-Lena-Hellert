@@ -1,10 +1,7 @@
-enter here a description on what is what and what is happening where
 
-important: need gurobi academic license
+# Seminar paper IHTC 2024
 
-# Seminar paper about the IHTC 2024
-
-This repository contains my code. It includes a Mixed Integer Programming (MIP) model and Constraint Programming (CP) models for solving instances of the integrated healthcare scheduling problem. here more info and all the data: (https://ihtc2024.github.io).
+This repository contains my code. It includes a Mixed Integer Programming MIP model and Constraint Programming CP models for solving instances of the integrated healthcare scheduling problem. Here more info and all the data: (https://ihtc2024.github.io).
 
 ## Contents
 
