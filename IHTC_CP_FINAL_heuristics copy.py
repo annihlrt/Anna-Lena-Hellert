@@ -3,7 +3,7 @@ from ortools.sat.python import cp_model
 import json
 
 # Load the JSON input
-with open("i20.json") as f:
+with open("i02.json") as f:
     data = json.load(f)
 
 model = cp_model.CpModel()
@@ -84,7 +84,10 @@ for p in patients:
             else:
                 model.Add(var == 0)
 
+
+
 # === Constraints ===
+
 
 # H5 + H6: Mandatory patients must be scheduled within release/due window
 for p in patients:
@@ -335,14 +338,71 @@ for n in nurse_ids:
                     model.AddMinEquality(capped, [excess, model.NewConstant(5)])
                     objective_terms.append(capped * weights["nurse_eccessive_workload"])
 
+# === Heursitics ===
+# Heuristic: Prioritize tight-window (inflexible) patients to be admitted earlier
+
+
+# Step 1: Create (pid, d, flexibility) tuples
+admit_vars = []
+for p in patients:
+    pid = p["id"]
+    release = p["surgery_release_day"]
+    due = p.get("surgery_due_day", D - 1)
+    flexibility = due - release
+    for d in range(release, due + 1):
+        admit_vars.append((flexibility, pid, d, admit[pid, d]))
+
+# Step 2: Sort by (flexibility ASC, day ASC)
+admit_vars.sort(key=lambda x: (x[0], x[2]))
+
+# Step 3: Extract variables only
+ordered_admit_vars = [var for _, _, _, var in admit_vars]
+
+# Step 4: Apply decision strategy
+model.AddDecisionStrategy(
+    ordered_admit_vars,
+    cp_model.CHOOSE_FIRST,
+    cp_model.SELECT_MIN_VALUE
+)
+
+# Heuristic: Prioritize assigning high-skilled nurses first
+nurse_skill = {n["id"]: n["skill_level"] for n in nurses}
+
+# Build a list of (skill, nurse_id, room_id, day, shift, BoolVar)
+skill_ordered_assignments = []
+for n in nurse_ids:
+    skill = nurse_skill[n]  # assume this is a precomputed dict
+    for r in sorted(room_ids):
+        for d in range(D):
+            for s in range(S):
+                key = (n, r, d, s)
+                if key in nurse_assign:
+                    skill_ordered_assignments.append(
+                        (skill, n, r, d, s, nurse_assign[key])
+                    )
+
+# Sort by skill DESC, then by nurse, room, day, shift
+skill_ordered_assignments.sort(key=lambda x: (-x[0], x[1], x[2], x[3], x[4]))
+
+# Extract only the BoolVars
+ordered_nurse_vars = [var for *_, var in skill_ordered_assignments]
+
+# Apply decision strategy
+model.AddDecisionStrategy(
+    ordered_nurse_vars,
+    cp_model.CHOOSE_FIRST,
+    cp_model.SELECT_MAX_VALUE
+)
+
 # === Final Objective ===
 model.Minimize(sum(objective_terms))
 
 # === Solver and JSON Output ===
 solver = cp_model.CpSolver()
-solver.parameters.max_time_in_seconds = 200
-solver.parameters.log_search_progress = True  # Print intermediate search logs
-solver.parameters.num_search_workers = 4  
+solver.parameters.max_time_in_seconds = 300
+solver.parameters.log_search_progress = True  # Print intermediate search logs  
+solver.parameters.use_lns = True
+solver.parameters.num_search_workers = 4  # or more depending on your machine
 status = solver.Solve(model)
 
 if status == cp_model.OPTIMAL:
@@ -351,8 +411,6 @@ elif status == cp_model.FEASIBLE:
     print("Feasible solution found (not necessarily optimal).")
 else:
     print("No solution found.")
-
-
 
 if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
     patient_output = []
@@ -384,7 +442,7 @@ if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
 
     output = {"patients": patient_output, "nurses": nurse_output}
 
-    with open("sol01B.json", "w") as f:
+    with open("solution.json", "w") as f:
         json.dump(output, f, indent=2)
     print("Solution written to solution.json")
 else:

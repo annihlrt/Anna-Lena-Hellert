@@ -4,8 +4,13 @@ from gurobipy import GRB
 import json
 from collections import defaultdict
 
+import json
+
+with open("solution.json", "r") as f:
+    cp_sol = json.load(f)
+
 # === Load data ===
-with open("i26.json") as f:
+with open("i20.json") as f:
     data = json.load(f)
 
 # === Setup ===
@@ -398,15 +403,38 @@ model.setObjective(
 
 
 
-model.setParam("TimeLimit", 300) #setting time limit
+model.setParam("TimeLimit", 200) #setting time limit
 model.setParam("LogFile", "gurobi_log.txt")
 model.setParam("Presolve", 1) #presolve 1 instead of 2
 model.setParam("Threads", 4) #number of threads
 model.setParam("MIPFocus", 1)
 model.setParam("Heuristics", 0.2)
 model.setParam("Symmetry", 1)
-model.setParam("MIPGap", 0.05)  # Stop when the relative gap <= 1%
+model.setParam("MIPGap", 0.01)  # Stop when the relative gap <= 1%
 
+for (p, d), var in admit.items():
+    # From CP output: get admit day for patient
+    if str(p) in cp_sol["patients"]:
+        if cp_sol["patients"][str(p)]["admission_day"] == d:
+            var.Start = 1
+        else:
+            var.Start = 0
+    else:
+        var.Start = 0  # Patient not scheduled
+
+for (n, d, s, r), var in nurse_assign.items():
+    rooms = []
+    for nurse in cp_sol["nurses"]:
+        if nurse["id"] == n:
+            for a in nurse["assignments"]:
+                if a["day"] == d and a["shift"] == shift_types[s]:  # shifts = ["early", "late", "night"]
+                    rooms = a["rooms"]
+                    break
+            break
+    if r in rooms:
+        var.Start = 1
+    else:
+        var.Start = 0
 
 model.optimize() #optimizing the model here
 if model.Status == GRB.OPTIMAL:
@@ -415,6 +443,7 @@ elif model.Status == GRB.INTERRUPTED:
     print("Time limit reached. Best feasible solution has objective:", model.ObjVal)
 elif model.Status == GRB.INFEASIBLE:
     print("Model is infeasible.")
+
 
 if model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT:
     final_patients = []
@@ -453,7 +482,7 @@ if model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT:
         "nurses": final_nurses
     }
 
-    with open("sol01A.json", "w") as f:
+    with open("sol_i12.json", "w") as f:
         json.dump(final_solution, f, indent=2)
 
     print(" Final solution exported to 'sol_i12.json'")
