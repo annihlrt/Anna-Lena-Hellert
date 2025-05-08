@@ -22,6 +22,9 @@ This repository contains my code. It includes a Mixed Integer Programming MIP mo
 - Python 3.8+
 - `ortools`
 
+### Validation
+- eg. GNU compiler g++
+
 ## Instances
 - For my paper only the included instances are necessary. But for completion all instances were tested.
 - Additional public instances (i01–i30) can be downloaded from the [official competition page](https://ihtc2024.github.io).
