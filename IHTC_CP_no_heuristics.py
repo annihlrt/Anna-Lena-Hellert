@@ -3,7 +3,7 @@ from ortools.sat.python import cp_model
 import json
 
 # Load the JSON input
-with open("i20.json") as f:
+with open("i02.json") as f:
     data = json.load(f)
 
 model = cp_model.CpModel()
@@ -25,7 +25,7 @@ patient_ids = [p["id"] for p in patients]
 shifts = data["shift_types"]
 room_cap = {r['id']: r['capacity'] for r in rooms}
 
-# Normalize nurse IDs to strings
+
 for nurse in nurses:
     nurse["id"] = str(nurse["id"])
 
@@ -53,7 +53,6 @@ nurse_assign = {
 }
 
 # Patient presence tracking
-# Correct patient presence tracking
 presence = {}
 for p in patients:
     pid = p["id"]
@@ -66,10 +65,9 @@ for p in patients:
             var = model.NewBoolVar(f"present_{pid}_{r}_{d}")
             presence[(pid, r, d)] = var
 
-            # Compute admissible admission day exactly LOS days before or earlier
             possible_admit_days = [a for a in range(release, min(due, d) + 1) if a <= d < a + LOS]
 
-            # Patient is present in room r on day d exactly if they were admitted on exactly one of these days and assigned to room r.
+           
             admits_and_room = [model.NewBoolVar(f"admits_and_room_{pid}_{r}_{d}_{a}") for a in possible_admit_days]
             
             for idx, a in enumerate(possible_admit_days):
@@ -94,7 +92,7 @@ for p in patients:
     model.Add(sum(admit[pid, d] for d in range(release, due + 1)) == scheduled[pid])
     if p.get("mandatory", False):
         model.Add(scheduled[pid] == 1)
-        # Hx: Exactly one room assigned if patient is scheduled
+        #  Exactly one room assigned if patient is scheduled
 for p in patients:
     pid = p["id"]
     model.Add(sum(room_assign[pid, r] for r in room_ids) == scheduled[pid])
@@ -128,14 +126,14 @@ for p in patients:
     for d in day_range:
         model.Add(sum(surgery_assign[pid, t, d] for t in ot_ids) == admit[pid, d])
 
-# === H7: Room capacity (REVISED) ===
+# === H7: Room capacity ===
 for r in room_ids:
     for d in day_range:
         occ = len(occ_map.get((r, d), []))
         patient_in_room = [presence[pid, r, d] for pid in patient_ids if (pid, r, d) in presence]
         model.Add(sum(patient_in_room) + occ <= room_cap[r])
 
-# === H1: No gender mix (SIMPLIFIED) ===
+# === H1: No gender mix ===
 for r in room_ids:
     for d in day_range:
         A_present = model.NewBoolVar(f"has_A_{r}_{d}")
@@ -171,7 +169,7 @@ for r in room_ids:
         # Cannot have both A and B present
         model.Add(A_present + B_present <= 1)
 
-# === A5: Assign nurses when patients are present (REVISED) ===
+# === A5: Assign nurses when patients are present ===
 for r in room_ids:
     for d in day_range:
         for s in shift_range:
@@ -193,7 +191,8 @@ for r in room_ids:
 objective_terms = []
 weights = data["weights"]
 age_order = {ag: i for i, ag in enumerate(data["age_groups"])}
-# === Soft Constraints Continued ===
+
+# === Soft  Constoaints  ===
 # S1: Age mix in rooms
 for r in room_ids:
     for d in day_range:
@@ -274,12 +273,7 @@ for p in patients:
         objective_terms.append(not_admitted * weights["unscheduled_optional"])
 
 # S7: Admission delay
-#for p in patients:
- #   pid = p["id"]
- #   release = p["surgery_release_day"]
- #   delay = model.NewIntVar(0, D, f"delay_{pid}")
- #   model.Add(delay == sum((d - release) * admit[pid, d] for d in range(release, D)))
- #   objective_terms.append(delay * weights["patient_delay"])
+
 
 for p in patients:
     pid = p["id"]
@@ -292,7 +286,7 @@ for p in patients:
             objective_terms.append(delay * weights["patient_delay"])
 # S4: Nurse workload excess
 # Default nurse workload limit per shift
-default_nurse_shift_limit = 10  # adjust based on data scale
+default_nurse_shift_limit = 10  # adjusted
 
 nurse_limits = {}
 for n in nurse_ids:
@@ -300,7 +294,7 @@ for n in nurse_ids:
     for d in range(D):  # days
         for s in range(S):  # shift types
             nurse_limits[n][(d, s)] = default_nurse_shift_limit
-# Construct limits: (nurse_id, day, shift) → max load
+# Construct limits: nurse_id, day, shift with max load
 for n in nurse_ids:
     for d in day_range:
         for s in shift_range:
@@ -335,13 +329,13 @@ for n in nurse_ids:
                     model.AddMinEquality(capped, [excess, model.NewConstant(5)])
                     objective_terms.append(capped * weights["nurse_eccessive_workload"])
 
-# === Final Objective ===
+# === Objectbive ===
 model.Minimize(sum(objective_terms))
 
-# === Solver and JSON Output ===
+# === Solver and JSON Out put ===
 solver = cp_model.CpSolver()
 solver.parameters.max_time_in_seconds = 200
-solver.parameters.log_search_progress = True  # Print intermediate search logs
+solver.parameters.log_search_progress = True  # Print  search logs
 solver.parameters.num_search_workers = 4  
 status = solver.Solve(model)
 
@@ -384,8 +378,8 @@ if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
 
     output = {"patients": patient_output, "nurses": nurse_output}
 
-    with open("sol01B.json", "w") as f:
+    with open("sol02B.json", "w") as f: # extracts solution
         json.dump(output, f, indent=2)
-    print("Solution written to solution.json")
+    print("Solution written to sol02B.json")
 else:
     print("No solution found.")
