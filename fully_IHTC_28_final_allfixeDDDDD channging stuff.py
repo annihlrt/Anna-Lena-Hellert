@@ -5,10 +5,10 @@ import json
 from collections import defaultdict
 
 # === Load data ===
-with open("i26.json") as f:
+with open("i02.json") as f:
     data = json.load(f)
 
-# === Setup ===
+# === Setting up ===
 days = data["days"]
 days_list = list(range(days))
 shift_types = data["shift_types"]
@@ -188,7 +188,7 @@ for n in nurse_ids:
                     model.addConstr(workload_indicator >= gp.quicksum(workload_terms) / 1000)
                     model.addConstr(nurse_assign[n, r, d, s] <= workload_indicator)
 
-# === H1: No Gender Mixing (Hard Constraint) ===
+# === H1: No Gender Mixing ===
 gender_in_room = model.addVars(room_ids, days_list, ["A", "B"], vtype=GRB.BINARY, name="gender_in_room")
 
 for r in room_ids:
@@ -241,52 +241,7 @@ for r in room_ids:
             age_penalties.append(max_age - min_age)
 
 
-
-# === S2  ===
-for n in nurse_ids:
-    skill = nurse_skill[n]
-    for d in days_list:
-        for s in shifts_list:
-            for r in room_ids:
-                for p in patient_ids:
-                    los = p_los[p]
-                    for a in range(p_release[p], p_due[p] + 1):
-                        if a <= d < a + los:
-                            index = 3 * (d - a) + s
-                            req_skill = p_skill[p][index]
-                            diff = max(0, req_skill - skill)
-                            if diff > 0:
-                                and1 = linearize_and(model, admit[p, a], room_assign[p, r], f"mismatch1_{p}_{r}_{d}_{s}")
-                                and2 = linearize_and(model, and1, nurse_assign[n, r, d, s], f"mismatch2_{p}_{r}_{n}_{d}_{s}")
-                                skill_mismatch_penalties.append(diff * and2)
-                for occ in occ_room_day.get((r, d), []):
-                    index = 3 * d + s
-                    req_skill = occ_skill[occ][index]
-                    diff = max(0, req_skill - skill)
-                    if diff > 0:
-                        skill_mismatch_penalties.append(diff * nurse_assign[n, r, d, s])
-for n in nurse_ids:
-    skill = nurse_skill[n]
-    for d in days_list:
-        for s in shifts_list:
-            for r in room_ids:
-                for p in patient_ids:
-                    los = p_los[p]
-                    for a in range(p_release[p], p_due[p] + 1):
-                        if a <= d < a + los:
-                            index = 3 * (d - a) + s
-                            req_skill = p_skill[p][index]
-                            diff = max(0, req_skill - skill)
-                            if diff > 0:
-                                and1 = linearize_and(model, admit[p, a], room_assign[p, r], f"mismatch1_{p}_{r}_{d}_{s}")
-                                and2 = linearize_and(model, and1, nurse_assign[n, r, d, s], f"mismatch2_{p}_{r}_{n}_{d}_{s}")
-                                skill_mismatch_penalties.append(diff * and2)
-                for occ in occ_room_day.get((r, d), []):
-                    index = 3 * d + s
-                    req_skill = occ_skill[occ][index]
-                    diff = max(0, req_skill - skill)
-                    if diff > 0:
-                        skill_mismatch_penalties.append(diff * nurse_assign[n, r, d, s])
+# === S2 ===
 for n in nurse_ids:
     skill = nurse_skill[n]
     for d in days_list:
@@ -365,7 +320,7 @@ for p in patient_ids:
 # === S8  ===
 unscheduled = [1 - scheduled[p] for p in patient_ids if not p_mand[p]]
 
-# === S2: Continuity of Care === was often not using S2, as looping through everything is not efficient
+# === S3:  === 
 nurse_cares = model.addVars(patient_ids, nurse_ids, vtype=GRB.BINARY, name="nurse_cares")
 continuity_penalties = []
 for p in patient_ids:
