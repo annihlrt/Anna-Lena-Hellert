@@ -53,7 +53,6 @@ nurse_assign = {
 }
 
 # Patient presence tracking
-# Correct patient presence tracking
 presence = {}
 for p in patients:
     pid = p["id"]
@@ -66,7 +65,7 @@ for p in patients:
             var = model.NewBoolVar(f"present_{pid}_{r}_{d}")
             presence[(pid, r, d)] = var
 
-            # Compute admissible admission day exactly LOS days before or earlier
+            #  admissible admission day exactly days before or earlier
             possible_admit_days = [a for a in range(release, min(due, d) + 1) if a <= d < a + LOS]
 
             # Patient is present in room r on day d exactly if they were admitted on exactly one of these days and assigned to room r.
@@ -97,7 +96,7 @@ for p in patients:
     model.Add(sum(admit[pid, d] for d in range(release, due + 1)) == scheduled[pid])
     if p.get("mandatory", False):
         model.Add(scheduled[pid] == 1)
-        # Hx: Exactly one room assigned if patient is scheduled
+        # Exactly one room assigned if patient is scheduled
 for p in patients:
     pid = p["id"]
     model.Add(sum(room_assign[pid, r] for r in room_ids) == scheduled[pid])
@@ -131,14 +130,14 @@ for p in patients:
     for d in day_range:
         model.Add(sum(surgery_assign[pid, t, d] for t in ot_ids) == admit[pid, d])
 
-# === H7: Room capacity (REVISED) ===
+# === H7: Room capacity  ===
 for r in room_ids:
     for d in day_range:
         occ = len(occ_map.get((r, d), []))
         patient_in_room = [presence[pid, r, d] for pid in patient_ids if (pid, r, d) in presence]
         model.Add(sum(patient_in_room) + occ <= room_cap[r])
 
-# === H1: No gender mix (SIMPLIFIED) ===
+# === H1: No gender mix  ===
 for r in room_ids:
     for d in day_range:
         A_present = model.NewBoolVar(f"has_A_{r}_{d}")
@@ -174,7 +173,7 @@ for r in room_ids:
         # Cannot have both A and B present
         model.Add(A_present + B_present <= 1)
 
-# === A5: Assign nurses when patients are present (REVISED) ===
+# === A5: Assign nurses when patients are present ===
 for r in room_ids:
     for d in day_range:
         for s in shift_range:
@@ -196,7 +195,8 @@ for r in room_ids:
 objective_terms = []
 weights = data["weights"]
 age_order = {ag: i for i, ag in enumerate(data["age_groups"])}
-# === Soft Constraints Continued ===
+
+# === Soft Constraints  ===
 # S1: Age mix in rooms
 for r in room_ids:
     for d in day_range:
@@ -277,12 +277,6 @@ for p in patients:
         objective_terms.append(not_admitted * weights["unscheduled_optional"])
 
 # S7: Admission delay
-#for p in patients:
- #   pid = p["id"]
- #   release = p["surgery_release_day"]
- #   delay = model.NewIntVar(0, D, f"delay_{pid}")
- #   model.Add(delay == sum((d - release) * admit[pid, d] for d in range(release, D)))
- #   objective_terms.append(delay * weights["patient_delay"])
 
 for p in patients:
     pid = p["id"]
@@ -295,15 +289,15 @@ for p in patients:
             objective_terms.append(delay * weights["patient_delay"])
 # S4: Nurse workload excess
 # Default nurse workload limit per shift
-default_nurse_shift_limit = 10  # adjust based on data scale
+default_nurse_shift_limit = 10  # adjusted 
 
 nurse_limits = {}
 for n in nurse_ids:
     nurse_limits[n] = {}
-    for d in range(D):  # days
-        for s in range(S):  # shift types
+    for d in range(D):  
+        for s in range(S):  
             nurse_limits[n][(d, s)] = default_nurse_shift_limit
-# Construct limits: (nurse_id, day, shift) → max load
+# Construct limits:  max load
 for n in nurse_ids:
     for d in day_range:
         for s in shift_range:
@@ -342,7 +336,7 @@ for n in nurse_ids:
 # Heuristic: Prioritize tight-window (inflexible) patients to be admitted earlier
 
 
-# Step 1: Create (pid, d, flexibility) tuples
+#  Create (pid, d, flexibility) tuples
 admit_vars = []
 for p in patients:
     pid = p["id"]
@@ -352,13 +346,13 @@ for p in patients:
     for d in range(release, due + 1):
         admit_vars.append((flexibility, pid, d, admit[pid, d]))
 
-# Step 2: Sort by (flexibility ASC, day ASC)
+# Sort by (flexibility ASC, day ASC)
 admit_vars.sort(key=lambda x: (x[0], x[2]))
 
-# Step 3: Extract variables only
+#  Extract variables 
 ordered_admit_vars = [var for _, _, _, var in admit_vars]
 
-# Step 4: Apply decision strategy
+# Applying decision strategy
 model.AddDecisionStrategy(
     ordered_admit_vars,
     cp_model.CHOOSE_FIRST,
@@ -368,7 +362,7 @@ model.AddDecisionStrategy(
 # Heuristic: Prioritize assigning high-skilled nurses first
 nurse_skill = {n["id"]: n["skill_level"] for n in nurses}
 
-# Build a list of (skill, nurse_id, room_id, day, shift, BoolVar)
+# Build a list of skill, nurse_id, room_id, day, shift, BoolVar
 skill_ordered_assignments = []
 for n in nurse_ids:
     skill = nurse_skill[n]  # assume this is a precomputed dict
@@ -394,10 +388,10 @@ model.AddDecisionStrategy(
     cp_model.SELECT_MAX_VALUE
 )
 
-# === Final Objective ===
+# ===  Final  Objective ===
 model.Minimize(sum(objective_terms))
 
-# === Solver and JSON Output ===
+# ===  Solver and JSON Output  ===
 solver = cp_model.CpSolver()
 solver.parameters.max_time_in_seconds = 300
 solver.parameters.log_search_progress = True  # Print intermediate search logs  
